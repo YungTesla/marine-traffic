@@ -1,0 +1,27 @@
+services:
+  ais-collector:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: marine-traffic-collector
+    env_file:
+      - .env
+    environment:
+      - DB_PATH=/data/encounters.db
+    volumes:
+      - db-data:/data
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    stop_grace_period: 10s
+
+volumes:
+  db-data:
+    driver: local
+
+networks:
+  default:
+    name: marine-traffic-net
