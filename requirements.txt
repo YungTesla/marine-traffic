@@ -13,3 +13,6 @@ stable-baselines3~=2.7
 matplotlib~=3.10
 folium~=0.20
 tensorboard~=2.20
+
+# Testing
+pytest~=8.4
