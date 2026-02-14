@@ -24,6 +24,7 @@ src/
   database.py              - SQLite schema (4 tabellen), CRUD operaties, WAL modus
   encounter_detector.py    - Haversine, CPA/TCPA, COLREGS classificatie, encounter lifecycle
   main.py                  - Entry point: asyncio loop, signal handling, stats logging
+  business_analyst.py      - Business analyse utility (KPI's, datakwaliteit, ML-readiness)
   ml/
     __init__.py
     features.py            - Feature engineering: sin/cos encoding, normalisatie, trajectory features
@@ -41,6 +42,13 @@ test_pipeline.py           - End-to-end test (simulatie zonder API key)
 Dockerfile                 - Python 3.13-slim, non-root user, healthcheck
 docker-compose.yml         - Single service (ais-collector), named volume (db-data)
 Makefile                   - Docker workflow commando's
+.claude/
+  skills/
+    business-analyst/      - /business-analyst slash command (Claude agent)
+    pm-orchestrator/       - /pm slash command (PM Orchestrator agent)
+    evaluator/             - /evaluator slash command (Evaluator agent)
+.github/
+  pull_request_template.md - PR template voor gestructureerde PR beschrijvingen
 docs/
   plan.md                  - Oorspronkelijk implementatieplan (afgerond)
   research.md              - AIS data source research
@@ -173,6 +181,86 @@ Bron: `src/encounter_detector.py:classify_encounter()`
 - **Nieuwe ML features**: Voeg functies toe aan `src/ml/features.py`
 - **Database bekijken**: `sqlite3 encounters.db "SELECT COUNT(*) FROM encounters;"`
 - **Database backup**: `make db-backup`
+- **Business analyse**: `/business-analyst` slash command of `python -m src.business_analyst`
+- **Feature implementeren (end-to-end)**: `/pm <beschrijving>` — PM Orchestrator plant, delegeert en levert op
+
+## Business Analyst Agent
+
+Claude Code slash command: `/business-analyst`
+
+Analyseert het project, de database en de infrastructuur. Logt bevindingen in `business-analyst.md` en werkt `TODO.md` bij met nieuwe backlog items en re-ranking.
+
+**Wat de agent doet:**
+1. Database analyse (volumes, encounters, kwaliteit, temporeel)
+2. Code & infra inventarisatie (git, .env, dependencies, ML modellen)
+3. ML-readiness beoordeling per model
+4. Bevindingen schrijven naar `business-analyst.md`
+5. `TODO.md` updaten met nieuwe items en re-ranken
+
+**Python utility:** `src/business_analyst.py`
+```bash
+python -m src.business_analyst              # Volledig rapport
+python -m src.business_analyst kpis         # KPI dashboard
+python -m src.business_analyst quality      # Datakwaliteit
+python -m src.business_analyst ml-readiness # ML gereedheid
+python -m src.business_analyst --json       # JSON output
+```
+
+## PM Orchestrator Agent
+
+Claude Code slash command: `/pm`
+
+Ontvangt een issue of feature request, maakt een plan, delegeert naar subagents, bewaakt kwaliteit en levert een merge-klare branch (of PR) op. Werkt altijd in een git worktree, nooit op main.
+
+**Wat de agent doet:**
+1. Issue analyseren, scope bepalen, plan maken
+2. Git worktree opzetten (werkt nooit op main)
+3. Subagents inzetten op basis van capability gaps:
+   - BA Agent: requirements analyse (wanneer scope vaag is)
+   - Engineer Agent: code implementatie
+   - QA Agent: tests schrijven en uitvoeren
+   - Security Agent: beveiligingsscan
+   - Docs Agent: documentatie bijwerken
+   - DevOps Agent: build/CI/deploy controleren
+4. Evaluatie gate doorlopen (tests, security, docs, acceptatiecriteria)
+5. PR aanmaken via `gh pr create` (of branch opleveren als geen remote)
+6. Worktree opruimen
+
+**Gebruik:**
+```bash
+/pm Implementeer een data retentie beleid dat oude posities automatisch opschoont
+/pm Fix #12: dubbele encounter detectie bij gelijktijdige positie-updates
+```
+
+**Branch conventies:** `feat/<beschrijving>`, `fix/<beschrijving>`, `chore/<beschrijving>`
+
+**Commit conventies:** `feat:`, `fix:`, `test:`, `docs:`, `chore:`, `refactor:`
+
+**Worktree locatie:** `../wt/<branch-naam>/` (relatief t.o.v. project root)
+
+## Evaluator Agent
+
+Claude Code slash command: `/evaluator`
+
+Evalueert de logs van andere agents (BA, PM), controleert consistentie, verifieert claims tegen de werkelijke projectstaat, en werkt de backlog bij met nieuwe acties.
+
+**Wat de agent doet:**
+1. Logs verzamelen: `business-analyst.md`, `PM.md`, `TODO.md`, `collector.log`
+2. Actuele staat verifiëren (database, git, bestanden)
+3. Cross-referentie: zijn BA aanbevelingen opgepakt? Zijn PM items afgevinkt? Kloppen de KPI's nog?
+4. Kwaliteitsbeoordeling per agent (actualiteit, volledigheid, actiegerichtheid)
+5. Projectvoortgang en risicoprofiel beoordelen
+6. Evaluatierapport schrijven naar `evaluator.md`
+7. `TODO.md` bijwerken met nieuwe acties (label: `[EVAL]`)
+
+**Gebruik:**
+```bash
+/evaluator
+```
+
+**Output bestanden:**
+- `evaluator.md` — Append-only evaluatielog met beoordelingen en bevindingen
+- `TODO.md` — Bijgewerkt met nieuwe acties en herprioritering
 
 ## Environment Variabelen
 

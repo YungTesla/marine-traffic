@@ -18,6 +18,9 @@ env/
 Thumbs.db
 backups/
 
+# Worktrees (PM Orchestrator)
+wt/
+
 # ML artifacts
 models/
 runs/
