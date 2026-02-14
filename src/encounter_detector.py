@@ -91,9 +91,9 @@ def classify_encounter(cog_a: float, cog_b: float) -> str:
     if diff > 180:
         diff = 360 - diff
 
-    if 170 <= diff <= 190 or diff >= 170:
+    if diff >= 170:
         return "head-on"
-    elif diff <= 67.5:
+    elif diff <= 15:
         return "overtaking"
     else:
         return "crossing"
