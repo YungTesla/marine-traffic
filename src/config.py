@@ -19,6 +19,11 @@ MIN_SPEED_KN = 0.5               # ignore stationary vessels (< 0.5 knots)
 # Stale vessel timeout (seconds) - remove from tracking if no update
 VESSEL_TIMEOUT_S = 300  # 5 minutes
 
+# WebSocket reconnection backoff
+RECONNECT_BASE_DELAY_S = 1.0    # Initial reconnection delay
+RECONNECT_MAX_DELAY_S = 60.0    # Maximum reconnection delay (cap)
+RECONNECT_JITTER_FACTOR = 0.3   # Jitter randomization (±30%)
+
 # Database
 DB_PATH = os.environ.get("DB_PATH", "encounters.db")
 
