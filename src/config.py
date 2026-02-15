@@ -22,5 +22,9 @@ VESSEL_TIMEOUT_S = 300  # 5 minutes
 # Database
 DB_PATH = os.environ.get("DB_PATH", "encounters.db")
 
+# Batch insert configuration
+BATCH_SIZE = 100               # flush after N records
+BATCH_FLUSH_INTERVAL_S = 5.0   # flush after N seconds
+
 # Logging interval (seconds)
 STATS_INTERVAL_S = 30
