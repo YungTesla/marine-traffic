@@ -13,6 +13,11 @@ from src.encounter_detector import haversine, compute_cpa_tcpa
 M_PER_DEG_LAT = 111_320.0
 
 
+def _parse_timestamp_str(ts_str: str) -> pd.Timestamp:
+    """Parse timestamp string from SQLite, handling 'YYYY-MM-DD HH:MM:SS.FFFFFFFFF +0000 UTC' format."""
+    return pd.Timestamp(ts_str.replace(" UTC", ""), tz="UTC")
+
+
 def cog_to_sincos(cog: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Convert course over ground (degrees) to sin/cos components."""
     rad = np.deg2rad(cog)
@@ -97,8 +102,8 @@ def build_encounter_features(encounter: dict, positions_a: pd.DataFrame,
     """
     duration = 0.0
     if encounter.get("end_time") and encounter.get("start_time"):
-        duration = (pd.Timestamp(encounter["end_time"])
-                    - pd.Timestamp(encounter["start_time"])).total_seconds()
+        duration = (_parse_timestamp_str(encounter["end_time"])
+                    - _parse_timestamp_str(encounter["start_time"])).total_seconds()
 
     def _agg_positions(pos_df):
         if pos_df.empty:
@@ -108,7 +113,10 @@ def build_encounter_features(encounter: dict, positions_a: pd.DataFrame,
         dcog = pos_df["cog"].diff().dropna()
         dcog = ((dcog + 180) % 360) - 180
         dsog = pos_df["sog"].diff().dropna()
-        dt = pd.to_datetime(pos_df["timestamp"]).diff().dt.total_seconds().dropna()
+        timestamps = pd.to_datetime(
+            pos_df["timestamp"].str.replace(" UTC", "", regex=False), utc=True
+        )
+        dt = timestamps.diff().dt.total_seconds().dropna()
         turn_rates = np.where(dt > 0, np.abs(dcog.values) / dt.values, 0)
         return {
             "max_sog": pos_df["sog"].max(),
@@ -127,8 +135,8 @@ def build_encounter_features(encounter: dict, positions_a: pd.DataFrame,
         pb0, pb1 = positions_b.iloc[0], positions_b.iloc[1]
         d0 = haversine(pa0["lat"], pa0["lon"], pb0["lat"], pb0["lon"])
         d1 = haversine(pa1["lat"], pa1["lon"], pb1["lat"], pb1["lon"])
-        t0 = pd.Timestamp(pa0["timestamp"])
-        t1 = pd.Timestamp(pa1["timestamp"])
+        t0 = _parse_timestamp_str(pa0["timestamp"])
+        t1 = _parse_timestamp_str(pa1["timestamp"])
         dt_s = (t1 - t0).total_seconds()
         if dt_s > 0:
             closure_rate = (d0 - d1) / dt_s
