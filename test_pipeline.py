@@ -16,6 +16,7 @@ Stappen:
   6. Database inhoud verifiëren
 """
 
+import asyncio
 import math
 import os
 import sqlite3
@@ -92,7 +93,7 @@ def test_classify():
     print("  COLREGS classificatie: head-on, overtaking, crossing  OK")
 
 
-def test_full_pipeline():
+async def test_full_pipeline():
     """Simuleer twee schepen die elkaar passeren."""
     db.init_db()
 
@@ -134,8 +135,8 @@ def test_full_pipeline():
         pos_a = make_pos("211000001", lat_a, lon_a, sog_a, cog_a, t, "TESTSHIP ALPHA")
         pos_b = make_pos("211000002", lat_b, lon_b, sog_b, cog_b, t, "TESTSHIP BRAVO")
 
-        detector.update(pos_a)
-        detector.update(pos_b)
+        await detector.update(pos_a)
+        await detector.update(pos_b)
 
         dist = haversine(lat_a, lon_a, lat_b, lon_b)
 
@@ -155,6 +156,9 @@ def test_full_pipeline():
 
     assert encounter_started, "Encounter is nooit gestart!"
     assert encounter_ended, "Encounter is nooit geëindigd!"
+
+    # Flush alle buffered data naar database
+    await db.get_buffer().flush_all()
 
     # Verifieer database
     conn = sqlite3.connect(DB_FILE)
@@ -223,7 +227,7 @@ def main():
 
     print("\n[4/4] Volledige pipeline simulatie")
     try:
-        test_full_pipeline()
+        asyncio.run(test_full_pipeline())
     except AssertionError as e:
         print(f"  FAILED: {e}")
         failed += 1

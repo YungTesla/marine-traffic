@@ -1,8 +1,12 @@
 import sqlite3
 import logging
+import asyncio
 from contextlib import contextmanager
+from collections import deque
+from datetime import datetime, timezone
+from typing import Optional
 
-from src.config import DB_PATH
+from src.config import DB_PATH, BATCH_SIZE, BATCH_FLUSH_INTERVAL_S
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +81,126 @@ def get_conn():
         conn.close()
 
 
+class PositionBuffer:
+    """
+    Buffers position inserts and flushes in batches to reduce SQLite I/O.
+    Thread-safe for asyncio use.
+    """
+    def __init__(self, batch_size: int = BATCH_SIZE):
+        self.batch_size = batch_size
+        self.position_buffer: deque = deque()
+        self.encounter_position_buffer: deque = deque()
+        self.first_buffered_time: Optional[float] = None
+        self._lock = asyncio.Lock()
+
+    async def add_position(self, mmsi: str, timestamp: str, lat: float, lon: float,
+                           sog: float, cog: float, heading: float):
+        """Add a position to the buffer. Auto-flush if batch size reached."""
+        async with self._lock:
+            if not self.first_buffered_time:
+                self.first_buffered_time = datetime.now(timezone.utc).timestamp()
+
+            self.position_buffer.append((mmsi, timestamp, lat, lon, sog, cog, heading))
+
+            if len(self.position_buffer) >= self.batch_size:
+                await self._flush_positions()
+
+    async def add_encounter_position(self, encounter_id: int, mmsi: str, timestamp: str,
+                                     lat: float, lon: float, sog: float,
+                                     cog: float, heading: float):
+        """Add an encounter position to the buffer. Auto-flush if batch size reached."""
+        async with self._lock:
+            if not self.first_buffered_time:
+                self.first_buffered_time = datetime.now(timezone.utc).timestamp()
+
+            self.encounter_position_buffer.append(
+                (encounter_id, mmsi, timestamp, lat, lon, sog, cog, heading)
+            )
+
+            if len(self.encounter_position_buffer) >= self.batch_size:
+                await self._flush_encounter_positions()
+
+    async def _flush_positions(self):
+        """Flush position buffer to database."""
+        if not self.position_buffer:
+            return
+
+        batch = list(self.position_buffer)
+        self.position_buffer.clear()
+
+        try:
+            with get_conn() as conn:
+                conn.executemany(
+                    """INSERT INTO positions (mmsi, timestamp, lat, lon, sog, cog, heading)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    batch,
+                )
+            logger.debug("Flushed %d positions to database", len(batch))
+        except Exception as e:
+            logger.error("Failed to flush positions: %s", e)
+            # Re-add to buffer on failure
+            self.position_buffer.extendleft(reversed(batch))
+            raise
+
+    async def _flush_encounter_positions(self):
+        """Flush encounter position buffer to database."""
+        if not self.encounter_position_buffer:
+            return
+
+        batch = list(self.encounter_position_buffer)
+        self.encounter_position_buffer.clear()
+
+        try:
+            with get_conn() as conn:
+                conn.executemany(
+                    """INSERT INTO encounter_positions
+                       (encounter_id, mmsi, timestamp, lat, lon, sog, cog, heading)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    batch,
+                )
+            logger.debug("Flushed %d encounter positions to database", len(batch))
+        except Exception as e:
+            logger.error("Failed to flush encounter positions: %s", e)
+            # Re-add to buffer on failure
+            self.encounter_position_buffer.extendleft(reversed(batch))
+            raise
+
+    async def flush_all(self):
+        """Flush all buffered data to database."""
+        async with self._lock:
+            await self._flush_positions()
+            await self._flush_encounter_positions()
+            self.first_buffered_time = None
+
+    async def should_flush(self) -> bool:
+        """Check if buffer should be flushed based on time."""
+        if not self.first_buffered_time:
+            return False
+
+        now = datetime.now(timezone.utc).timestamp()
+        elapsed = now - self.first_buffered_time
+
+        return (elapsed >= BATCH_FLUSH_INTERVAL_S and
+                (self.position_buffer or self.encounter_position_buffer))
+
+    async def auto_flush_if_needed(self):
+        """Flush if time threshold exceeded."""
+        if await self.should_flush():
+            await self.flush_all()
+
+
+# Global buffer instance
+_buffer: Optional[PositionBuffer] = None
+
+
+def get_buffer() -> PositionBuffer:
+    """Get or create the global position buffer."""
+    global _buffer
+    if _buffer is None:
+        _buffer = PositionBuffer()
+    return _buffer
+
+
 def init_db():
     with get_conn() as conn:
         conn.executescript(SCHEMA)
@@ -100,14 +224,11 @@ def upsert_vessel(mmsi: str, name: str = None, ship_type: int = None,
         )
 
 
-def insert_position(mmsi: str, timestamp: str, lat: float, lon: float,
-                     sog: float, cog: float, heading: float):
-    with get_conn() as conn:
-        conn.execute(
-            """INSERT INTO positions (mmsi, timestamp, lat, lon, sog, cog, heading)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (mmsi, timestamp, lat, lon, sog, cog, heading),
-        )
+async def insert_position(mmsi: str, timestamp: str, lat: float, lon: float,
+                          sog: float, cog: float, heading: float):
+    """Buffer a position insert. Flushes automatically based on batch size or time."""
+    buffer = get_buffer()
+    await buffer.add_position(mmsi, timestamp, lat, lon, sog, cog, heading)
 
 
 def create_encounter(vessel_a: str, vessel_b: str, start_time: str,
@@ -152,13 +273,9 @@ def update_encounter(encounter_id: int, end_time: str = None,
         )
 
 
-def insert_encounter_position(encounter_id: int, mmsi: str, timestamp: str,
-                               lat: float, lon: float, sog: float,
-                               cog: float, heading: float):
-    with get_conn() as conn:
-        conn.execute(
-            """INSERT INTO encounter_positions
-               (encounter_id, mmsi, timestamp, lat, lon, sog, cog, heading)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (encounter_id, mmsi, timestamp, lat, lon, sog, cog, heading),
-        )
+async def insert_encounter_position(encounter_id: int, mmsi: str, timestamp: str,
+                                    lat: float, lon: float, sog: float,
+                                    cog: float, heading: float):
+    """Buffer an encounter position insert. Flushes automatically based on batch size or time."""
+    buffer = get_buffer()
+    await buffer.add_encounter_position(encounter_id, mmsi, timestamp, lat, lon, sog, cog, heading)

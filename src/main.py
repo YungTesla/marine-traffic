@@ -34,6 +34,14 @@ async def log_stats(detector: EncounterDetector):
         )
 
 
+async def periodic_flush():
+    """Periodically flush buffered positions to database."""
+    buffer = db.get_buffer()
+    while not shutdown_event.is_set():
+        await asyncio.sleep(1)  # Check every second
+        await buffer.auto_flush_if_needed()
+
+
 async def run():
     db.init_db()
     detector = EncounterDetector()
@@ -42,6 +50,7 @@ async def run():
     logger.info("Press Ctrl+C to stop.")
 
     stats_task = asyncio.create_task(log_stats(detector))
+    flush_task = asyncio.create_task(periodic_flush())
     msg_count = 0
 
     try:
@@ -50,7 +59,7 @@ async def run():
                 break
 
             if isinstance(msg, VesselPosition):
-                detector.update(msg)
+                await detector.update(msg)
                 msg_count += 1
                 if msg_count % 1000 == 0:
                     logger.info("Processed %d position messages", msg_count)
@@ -64,7 +73,12 @@ async def run():
                     width=msg.width,
                 )
     finally:
+        logger.info("Flushing buffered positions...")
+        await db.get_buffer().flush_all()
+
         stats_task.cancel()
+        flush_task.cancel()
+
         s = detector.stats
         logger.info(
             "Shutting down. Final stats: %d vessels tracked, %d total encounters recorded.",
