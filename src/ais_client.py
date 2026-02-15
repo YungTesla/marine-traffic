@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import random
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import AsyncIterator
@@ -12,6 +13,9 @@ from src.config import (
     AISSTREAM_WS_URL,
     BOUNDING_BOXES,
     MESSAGE_TYPES,
+    RECONNECT_BASE_DELAY_S,
+    RECONNECT_MAX_DELAY_S,
+    RECONNECT_JITTER_FACTOR,
 )
 
 logger = logging.getLogger(__name__)
@@ -78,6 +82,26 @@ def _parse_static(msg: dict) -> VesselStatic | None:
         return None
 
 
+def _calculate_backoff(attempt: int) -> float:
+    """Calculate exponential backoff delay with jitter.
+
+    Args:
+        attempt: Number of failed reconnection attempts (0-indexed)
+
+    Returns:
+        Delay in seconds with jitter applied
+    """
+    # Exponential backoff: base * 2^attempt, capped at max
+    delay = min(RECONNECT_BASE_DELAY_S * (2 ** attempt), RECONNECT_MAX_DELAY_S)
+
+    # Add jitter: randomize by ±RECONNECT_JITTER_FACTOR
+    jitter = random.uniform(-RECONNECT_JITTER_FACTOR, RECONNECT_JITTER_FACTOR)
+    delay_with_jitter = delay * (1 + jitter)
+
+    # Ensure delay is never negative
+    return max(0.1, delay_with_jitter)
+
+
 async def stream_ais() -> AsyncIterator[VesselPosition | VesselStatic]:
     """Connect to AISStream.io and yield parsed messages. Reconnects on failure."""
     if not AISSTREAM_API_KEY:
@@ -92,12 +116,15 @@ async def stream_ais() -> AsyncIterator[VesselPosition | VesselStatic]:
         "FilterMessageTypes": MESSAGE_TYPES,
     })
 
+    attempt = 0  # Track reconnection attempts for exponential backoff
+
     while True:
         try:
             logger.info("Connecting to AISStream.io...")
             async with websockets.connect(AISSTREAM_WS_URL) as ws:
                 await ws.send(subscribe_msg)
                 logger.info("Subscribed. Streaming AIS data...")
+                attempt = 0  # Reset backoff counter on successful connection
 
                 async for raw in ws:
                     try:
@@ -121,4 +148,8 @@ async def stream_ais() -> AsyncIterator[VesselPosition | VesselStatic]:
         except OSError as e:
             logger.warning("Connection error: %s. Reconnecting...", e)
 
-        await asyncio.sleep(5)
+        # Exponential backoff with jitter
+        delay = _calculate_backoff(attempt)
+        logger.info("Reconnecting in %.1f seconds (attempt %d)...", delay, attempt + 1)
+        await asyncio.sleep(delay)
+        attempt += 1
