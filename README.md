@@ -14,6 +14,7 @@ Real-time AIS scheepspositie collector die ontmoetingen tussen schepen detecteer
   - XGBoost risk classificatie
   - MLP behavioral cloning
   - PPO reinforcement learning voor collision avoidance
+- **Data export** naar CSV/Parquet met filtering op encounter type, datum range en data kwaliteit
 - **Evaluatie & visualisatie** (trajectory plots, interactieve encounter maps)
 
 ## Snel Starten
@@ -79,14 +80,44 @@ src/
   ml/
     features.py            - Feature engineering
     data_extraction.py     - Data extractie voor ML training
+    data_export.py         - Data export naar CSV/Parquet met filtering
     trajectory_model.py    - LSTM trajectory prediction
     risk_classifier.py     - XGBoost risk classificatie
     behavioral_cloning.py  - MLP behavioral cloning
     maritime_env.py        - Gymnasium RL environment
     train_*.py             - Training scripts (trajectory, risk, bc, rl)
     evaluate.py            - Evaluatie en visualisatie
+scripts/
+  export_ml_data.py        - CLI tool voor data export
 test_pipeline.py           - End-to-end test
 ```
+
+## ML Data Export
+
+Export encounter data naar CSV of Parquet formaten voor ML training:
+
+```bash
+# Export high-quality encounters naar Parquet
+python scripts/export_ml_data.py encounters output/data.parquet \
+    --format parquet --quality 0.9 --min-positions 20
+
+# Export crossing encounters uit Q1 2026
+python scripts/export_ml_data.py pairs output/crossing.csv \
+    --type crossing --start 2026-01-01 --end 2026-03-31
+
+# Dataset summary met kwaliteitsmetrics
+python scripts/export_ml_data.py summary output/summary.csv \
+    --quality 0.7 --min-duration 120
+
+# Alle opties bekijken
+python scripts/export_ml_data.py --help
+```
+
+**Export types:**
+- `trajectories` — Trajectory segments voor LSTM training
+- `encounters` — Encounter features voor risk classificatie
+- `pairs` — State-action paren voor behavioral cloning/RL
+- `summary` — Dataset samenvatting met kwaliteitsmetrics
 
 ## Make Commando's
 

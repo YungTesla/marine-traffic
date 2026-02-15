@@ -29,6 +29,7 @@ src/
     __init__.py
     features.py            - Feature engineering: sin/cos encoding, normalisatie, trajectory features
     data_extraction.py     - SQLite -> pandas DataFrames voor ML training (3 extractiefuncties)
+    data_export.py         - Data export naar CSV/Parquet met filtering en kwaliteitsmetrics
     trajectory_model.py    - LSTM Encoder-Decoder voor trajectory prediction (PyTorch)
     train_trajectory.py    - Training script voor trajectory model
     risk_classifier.py     - XGBoost risk classificatie (HIGH/MEDIUM/LOW)
@@ -38,7 +39,12 @@ src/
     maritime_env.py        - Gymnasium RL environment voor collision avoidance
     train_rl.py            - PPO training script met curriculum learning
     evaluate.py            - Evaluatie en visualisatie utilities
+scripts/
+  export_ml_data.py        - CLI tool voor data export met filters en format opties
 test_pipeline.py           - End-to-end test (simulatie zonder API key)
+tests/
+  test_ais_client.py       - Tests voor AIS client
+  test_data_export.py      - Tests voor data export functionaliteit
 Dockerfile                 - Python 3.13-slim, non-root user, healthcheck
 docker-compose.yml         - Single service (ais-collector), named volume (db-data)
 Makefile                   - Docker workflow commando's
@@ -143,6 +149,7 @@ AISStream.io WebSocket API
     |
     v
   ml/data_extraction.py   -> Extract training data (3 functies)
+  ml/data_export.py       -> Export naar CSV/Parquet met filtering
   ml/features.py          -> Feature engineering
   ml/trajectory_model.py  -> LSTM trajectory prediction
   ml/risk_classifier.py   -> XGBoost risk classificatie
@@ -179,6 +186,7 @@ Bron: `src/encounter_detector.py:classify_encounter()`
 - **Encounter drempels aanpassen**: Wijzig constanten in `src/config.py`
 - **Database schema wijzigen**: Pas `SCHEMA` string in `database.py` aan (geen migratie framework — handmatig)
 - **Nieuwe ML features**: Voeg functies toe aan `src/ml/features.py`
+- **Data export voor ML training**: `python scripts/export_ml_data.py <type> <output> [filters]` — zie ML Module sectie
 - **Database bekijken**: `sqlite3 encounters.db "SELECT COUNT(*) FROM encounters;"`
 - **Database backup**: `make db-backup`
 - **Business analyse**: `/business-analyst` slash command of `python -m src.business_analyst`
@@ -307,3 +315,28 @@ Data extractie voor alle modellen via `src/ml/data_extraction.py`:
 - `extract_trajectories()` -> trajectory segments
 - `extract_encounters()` -> encounter features met risk labels
 - `extract_encounter_pairs()` -> state-action paren voor BC/RL
+
+**Data Export** (`data_export.py` + `scripts/export_ml_data.py`)
+- Export encounters naar CSV/Parquet formaten voor ML training
+- Filtering: encounter type, datum range, data kwaliteit
+- Kwaliteitsmetrieken: completeness score (0.0-1.0), positie counts, duration, CPA aanwezigheid
+- CLI tool: `python scripts/export_ml_data.py <type> <output> [filters]`
+- Export types:
+  - `trajectories` — Trajectory segments voor LSTM training
+  - `encounters` — Encounter features voor risk classificatie
+  - `pairs` — State-action paren voor BC/RL
+  - `summary` — Dataset samenvatting met kwaliteitsmetrics
+- Voorbeelden:
+  ```bash
+  # Export high-quality encounters naar Parquet
+  python scripts/export_ml_data.py encounters output/data.parquet \
+      --format parquet --quality 0.9 --min-positions 20
+
+  # Export crossing encounters uit Q1 2026
+  python scripts/export_ml_data.py pairs output/crossing.csv \
+      --type crossing --start 2026-01-01 --end 2026-03-31
+
+  # Dataset summary met kwaliteitsmetrics
+  python scripts/export_ml_data.py summary output/summary.csv \
+      --quality 0.7 --min-duration 120
+  ```

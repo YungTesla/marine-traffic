@@ -13,3 +13,4 @@ stable-baselines3~=2.7
 matplotlib~=3.10
 folium~=0.20
 tensorboard~=2.20
+pyarrow~=19.0  # Parquet format support
