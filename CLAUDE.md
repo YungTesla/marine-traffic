@@ -85,10 +85,17 @@ python -m src.main
 ### Testen
 
 ```bash
-python test_pipeline.py    # End-to-end test (geen API key nodig, geen pytest)
+# Unit tests (pytest)
+pytest                      # Run alle unit tests
+pytest tests/test_encounter_detector.py  # Run specifieke test module
+pytest -v                   # Verbose output
+
+# End-to-end test
+python test_pipeline.py     # E2E test (geen API key nodig)
 ```
 
-> **Let op:** Tests gebruiken handmatige assertions, niet pytest. Run via `python test_pipeline.py`.
+> **Unit tests:** De core functies (haversine, CPA/TCPA, COLREGS) hebben pytest unit tests in `tests/`
+> **E2E test:** `test_pipeline.py` simuleert de volledige pipeline zonder API key
 
 ## Belangrijke Constanten
 

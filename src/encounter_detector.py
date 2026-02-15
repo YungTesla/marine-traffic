@@ -114,7 +114,7 @@ class EncounterDetector:
         # Stats
         self.total_encounters = 0
 
-    def update(self, pos: VesselPosition):
+    async def update(self, pos: VesselPosition):
         """Process a new position update. Detect/update/end encounters."""
         now = datetime.now(timezone.utc).timestamp()
 
@@ -124,8 +124,8 @@ class EncounterDetector:
             self.position_times[pos.mmsi] = now
             return
 
-        # Store position in DB
-        db.insert_position(
+        # Store position in DB (buffered)
+        await db.insert_position(
             pos.mmsi, pos.timestamp, pos.lat, pos.lon,
             pos.sog, pos.cog, pos.heading,
         )
@@ -139,12 +139,12 @@ class EncounterDetector:
         self.position_times[pos.mmsi] = now
 
         # Check against all other active vessels
-        self._check_encounters(pos, now)
+        await self._check_encounters(pos, now)
 
         # Cleanup stale vessels
         self._cleanup_stale(now)
 
-    def _check_encounters(self, pos: VesselPosition, now: float):
+    async def _check_encounters(self, pos: VesselPosition, now: float):
         threshold_m = ENCOUNTER_DISTANCE_NM * NM_TO_METERS
         end_threshold_m = ENCOUNTER_END_DISTANCE_NM * NM_TO_METERS
 
@@ -188,7 +188,7 @@ class EncounterDetector:
                         )
                     enc.last_update = now
                     # Store positions during encounter
-                    db.insert_encounter_position(
+                    await db.insert_encounter_position(
                         enc.encounter_id, pos.mmsi, pos.timestamp,
                         pos.lat, pos.lon, pos.sog, pos.cog, pos.heading,
                     )
@@ -226,11 +226,11 @@ class EncounterDetector:
                 )
 
                 # Store initial positions for both vessels
-                db.insert_encounter_position(
+                await db.insert_encounter_position(
                     encounter_id, pos.mmsi, pos.timestamp,
                     pos.lat, pos.lon, pos.sog, pos.cog, pos.heading,
                 )
-                db.insert_encounter_position(
+                await db.insert_encounter_position(
                     encounter_id, other_mmsi, other_pos.timestamp,
                     other_pos.lat, other_pos.lon, other_pos.sog,
                     other_pos.cog, other_pos.heading,
