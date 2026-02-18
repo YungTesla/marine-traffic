@@ -27,3 +27,17 @@ runs/
 *.pt
 *.pth
 *.joblib
+
+# Runtime logs
+*.log
+
+# Pytest cache
+.pytest_cache/
+
+# ML export output
+output/
+
+# Agent-generated reports
+business-analyst.md
+evaluator.md
+PM.md

@@ -45,6 +45,8 @@ test_pipeline.py           - End-to-end test (simulatie zonder API key)
 tests/
   test_ais_client.py       - Tests voor AIS client
   test_data_export.py      - Tests voor data export functionaliteit
+  test_encounter_detector.py - Tests voor haversine, CPA/TCPA, COLREGS
+pytest.ini                   - Pytest configuratie
 Dockerfile                 - Python 3.13-slim, non-root user, healthcheck
 docker-compose.yml         - Single service (ais-collector), named volume (db-data)
 Makefile                   - Docker workflow commando's
@@ -108,7 +110,7 @@ Bron: `src/config.py`
 | `MIN_SPEED_KN` | 0.5 | Negeer stilliggende schepen (< 0.5 knopen) |
 | `VESSEL_TIMEOUT_S` | 300 | Verwijder schip na 5 min zonder positie-update |
 | `STATS_INTERVAL_S` | 30 | Log statistieken elke 30 seconden |
-| `BOUNDING_BOXES` | `[[43.0, -5.0], [55.5, 19.0]]` | NL/BE/DE/PL/FR kustwateren |
+| `BOUNDING_BOXES` | `[[[43.0, -5.0], [55.5, 19.0]]]` | NL/BE/DE/PL/FR kustwateren |
 
 Bron: `src/encounter_detector.py`
 
@@ -184,8 +186,8 @@ Bron: `src/encounter_detector.py:classify_encounter()`
 | Type | Koersverschil | Beschrijving |
 |------|---------------|--------------|
 | head-on | >= 170° | Schepen varen bijna recht op elkaar af |
-| overtaking | <= 67.5° | Schip nadert van achteren |
-| crossing | 67.5° - 170° | Overige situaties |
+| overtaking | <= 15° | Schip nadert van achteren |
+| crossing | 15° - 170° | Overige situaties |
 
 ## Veelvoorkomende Ontwikkeltaken
 

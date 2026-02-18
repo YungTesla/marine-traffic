@@ -38,6 +38,7 @@ python -m src.main
 ### Testen
 
 ```bash
+pytest                     # Unit tests
 python test_pipeline.py    # End-to-end test (geen API key nodig)
 ```
 
