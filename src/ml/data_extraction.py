@@ -31,6 +31,11 @@ def _get_conn(db_path: Optional[str] = None) -> sqlite3.Connection:
     return conn
 
 
+def _parse_timestamp(ts: pd.Series) -> pd.Series:
+    """Parse timestamp strings from SQLite, handling 'YYYY-MM-DD HH:MM:SS.FFFFFFFFF +0000 UTC' format."""
+    return pd.to_datetime(ts.str.replace(" UTC", "", regex=False), utc=True)
+
+
 # ---------------------------------------------------------------------------
 # 1. Trajectory extraction (for trajectory prediction LSTM)
 # ---------------------------------------------------------------------------
@@ -59,7 +64,7 @@ def extract_trajectories(
         logger.warning("No positions found in database.")
         return []
 
-    df["timestamp"] = pd.to_datetime(df["timestamp"])
+    df["timestamp"] = _parse_timestamp(df["timestamp"])
 
     segments = []
     for mmsi, group in df.groupby("mmsi"):
@@ -205,10 +210,10 @@ def extract_encounter_pairs(db_path: Optional[str] = None) -> list[dict]:
 
         # Build states for vessel A (using B as the other vessel)
         states_a = []
+        b_times = _parse_timestamp(pos_b["timestamp"])
         for i in range(len(pos_a)):
             # Find closest-in-time position of vessel B
-            t_a = pd.Timestamp(pos_a.iloc[i]["timestamp"])
-            b_times = pd.to_datetime(pos_b["timestamp"])
+            t_a = pd.Timestamp(pos_a.iloc[i]["timestamp"].replace(" UTC", ""), tz="UTC")
             closest_b_idx = (b_times - t_a).abs().argmin()
 
             own = dict(pos_a.iloc[i])
@@ -218,9 +223,9 @@ def extract_encounter_pairs(db_path: Optional[str] = None) -> list[dict]:
 
         # Build states for vessel B (using A as the other vessel)
         states_b = []
+        a_times = _parse_timestamp(pos_a["timestamp"])
         for i in range(len(pos_b)):
-            t_b = pd.Timestamp(pos_b.iloc[i]["timestamp"])
-            a_times = pd.to_datetime(pos_a["timestamp"])
+            t_b = pd.Timestamp(pos_b.iloc[i]["timestamp"].replace(" UTC", ""), tz="UTC")
             closest_a_idx = (a_times - t_b).abs().argmin()
 
             own = dict(pos_b.iloc[i])
@@ -231,7 +236,7 @@ def extract_encounter_pairs(db_path: Optional[str] = None) -> list[dict]:
         # Extract actions (turn_rate, accel_rate) from consecutive positions
         def _extract_actions(pos: pd.DataFrame) -> np.ndarray:
             actions = []
-            timestamps = pd.to_datetime(pos["timestamp"])
+            timestamps = _parse_timestamp(pos["timestamp"])
             for i in range(1, len(pos)):
                 dt = (timestamps.iloc[i] - timestamps.iloc[i - 1]).total_seconds()
                 if dt <= 0:
