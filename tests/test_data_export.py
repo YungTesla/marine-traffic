@@ -9,6 +9,7 @@ import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import pytest
 import pandas as pd
 import numpy as np
 
@@ -28,6 +29,27 @@ from src.ml.data_export import (
     compute_encounter_quality,
     filter_encounters,
 )
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _seed_db(monkeypatch_module):
+    """Seed the test database before all tests in this module, clean up after."""
+    import src.config
+    import src.database
+    monkeypatch_module.setattr(src.config, "DB_PATH", TEST_DB)
+    monkeypatch_module.setattr(src.database, "DB_PATH", TEST_DB)
+    setup_test_database()
+    yield
+    cleanup()
+
+
+@pytest.fixture(scope="module")
+def monkeypatch_module():
+    """Module-scoped monkeypatch."""
+    from _pytest.monkeypatch import MonkeyPatch
+    mp = MonkeyPatch()
+    yield mp
+    mp.undo()
 
 
 def setup_test_database():
@@ -356,25 +378,3 @@ def cleanup():
     print("\n✅ Test database cleaned up")
 
 
-if __name__ == "__main__":
-    try:
-        setup_test_database()
-        test_quality_metrics()
-        test_filtering()
-        test_csv_export()
-        test_parquet_export()
-        test_trajectory_export()
-        test_encounter_pairs_export()
-
-        print("\n" + "=" * 50)
-        print("✅ ALL TESTS PASSED")
-        print("=" * 50)
-
-    except AssertionError as e:
-        print(f"\n❌ TEST FAILED: {e}")
-        raise
-    except Exception as e:
-        print(f"\n❌ ERROR: {e}")
-        raise
-    finally:
-        cleanup()

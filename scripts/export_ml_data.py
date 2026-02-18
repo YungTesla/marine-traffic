@@ -127,7 +127,7 @@ Export types:
         "--db", "--db-path", dest="db_path", type=str, help="Database path (optional)"
     )
 
-    # Dataset splitting (future enhancement)
+    # Dataset splitting
     parser.add_argument(
         "--split",
         action="store_true",

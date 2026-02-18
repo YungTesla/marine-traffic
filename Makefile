@@ -35,7 +35,8 @@ db-stats: ## Toon database statistieken
 		"import sqlite3; c=sqlite3.connect('/data/encounters.db'); \
 		print('Vessels:', c.execute('SELECT COUNT(*) FROM vessels').fetchone()[0]); \
 		print('Positions:', c.execute('SELECT COUNT(*) FROM positions').fetchone()[0]); \
-		print('Encounters:', c.execute('SELECT COUNT(*) FROM encounters').fetchone()[0])"
+		print('Encounters:', c.execute('SELECT COUNT(*) FROM encounters').fetchone()[0]); \
+		print('Encounter positions:', c.execute('SELECT COUNT(*) FROM encounter_positions').fetchone()[0])"
 
 clean: ## Verwijder containers, images en volumes (DATA GAAT VERLOREN!)
 	@echo "WAARSCHUWING: Dit verwijdert alle data inclusief de database!"
