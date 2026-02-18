@@ -92,7 +92,8 @@ def build_trajectory_features(df: pd.DataFrame) -> np.ndarray:
 
 def build_encounter_features(encounter: dict, positions_a: pd.DataFrame,
                               positions_b: pd.DataFrame,
-                              vessel_a: dict, vessel_b: dict) -> dict:
+                              vessel_a: dict, vessel_b: dict,
+                              water_level: dict | None = None) -> dict:
     """Build feature dict for risk classification from encounter data.
 
     Args:
@@ -147,6 +148,19 @@ def build_encounter_features(encounter: dict, positions_a: pd.DataFrame,
     type_crossing = 1.0 if enc_type == "crossing" else 0.0
     type_overtaking = 1.0 if enc_type == "overtaking" else 0.0
 
+    # Tidal phase proxy: uur van dag als sin/cos (M2 semi-diurnaal getij, periode ~12.42u)
+    tidal_hour_sin = np.nan
+    tidal_hour_cos = np.nan
+    start_time_str = encounter.get("start_time")
+    if start_time_str:
+        try:
+            start_ts = _parse_timestamp_str(start_time_str)
+            hour = start_ts.hour + start_ts.minute / 60.0
+            tidal_hour_sin = math.sin(2 * math.pi * hour / 12.42)
+            tidal_hour_cos = math.cos(2 * math.pi * hour / 12.42)
+        except (ValueError, AttributeError):
+            pass
+
     return {
         "min_distance_m": encounter.get("min_distance_m", 0),
         "cpa_m": encounter.get("cpa_m", 0),
@@ -168,6 +182,11 @@ def build_encounter_features(encounter: dict, positions_a: pd.DataFrame,
         "ship_type_b": vessel_b.get("ship_type", 0) or 0,
         "length_a": vessel_a.get("length", 0) or 0,
         "length_b": vessel_b.get("length", 0) or 0,
+        # Waterstand features (NaN als geen data beschikbaar)
+        "water_level_cm": water_level["water_level_cm"] if water_level else np.nan,
+        "water_station_dist_m": water_level["station_dist_m"] if water_level else np.nan,
+        "tidal_hour_sin": tidal_hour_sin,
+        "tidal_hour_cos": tidal_hour_cos,
     }
 
 

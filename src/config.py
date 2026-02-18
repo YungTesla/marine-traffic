@@ -33,3 +33,20 @@ BATCH_FLUSH_INTERVAL_S = 5.0   # flush after N seconds
 
 # Logging interval (seconds)
 STATS_INTERVAL_S = 30
+
+# Rijkswaterstaat Waterinfo API (ddapi20)
+WATERINFO_BASE_URL = "https://ddapi20-waterwebservices.rijkswaterstaat.nl"
+WATER_POLL_INTERVAL_S = 600  # 10 minuten (gelijk aan API update-frequentie)
+
+WATERINFO_STATIONS = {
+    "hoekvanholland": {"lat": 51.978, "lon": 4.121, "name": "Hoek van Holland"},
+    "vlissingen":     {"lat": 51.440, "lon": 3.578, "name": "Vlissingen"},
+    "denhelder":      {"lat": 52.963, "lon": 4.760, "name": "Den Helder"},
+    "ijmuiden":       {"lat": 52.463, "lon": 4.555, "name": "IJmuiden"},
+    "scheveningen":   {"lat": 52.103, "lon": 4.264, "name": "Scheveningen"},
+    "harlingen":      {"lat": 53.175, "lon": 5.414, "name": "Harlingen"},
+    "delfzijl":       {"lat": 53.335, "lon": 6.929, "name": "Delfzijl"},
+    "rotterdam":      {"lat": 51.896, "lon": 4.486, "name": "Rotterdam"},
+    "terneuzen":      {"lat": 51.335, "lon": 3.829, "name": "Terneuzen"},
+    "europlatform":   {"lat": 52.002, "lon": 3.277, "name": "Europlatform"},
+}
