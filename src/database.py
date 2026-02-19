@@ -1,3 +1,4 @@
+import math
 import sqlite3
 import logging
 import asyncio
@@ -63,6 +64,22 @@ CREATE TABLE IF NOT EXISTS encounter_positions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_enc_pos_encounter ON encounter_positions(encounter_id);
+
+CREATE TABLE IF NOT EXISTS water_levels (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    station_id TEXT NOT NULL,
+    station_name TEXT,
+    source TEXT NOT NULL DEFAULT 'rws',
+    reference_datum TEXT DEFAULT 'NAP',
+    timestamp TEXT NOT NULL,
+    water_level_cm REAL,
+    lat REAL NOT NULL,
+    lon REAL NOT NULL,
+    UNIQUE(source, station_id, timestamp)
+);
+
+CREATE INDEX IF NOT EXISTS idx_wl_station_ts ON water_levels(station_id, timestamp);
+CREATE INDEX IF NOT EXISTS idx_wl_ts ON water_levels(timestamp);
 """
 
 
@@ -279,3 +296,82 @@ async def insert_encounter_position(encounter_id: int, mmsi: str, timestamp: str
     """Buffer an encounter position insert. Flushes automatically based on batch size or time."""
     buffer = get_buffer()
     await buffer.add_encounter_position(encounter_id, mmsi, timestamp, lat, lon, sog, cog, heading)
+
+
+# ---------------------------------------------------------------------------
+# Water level functions
+# ---------------------------------------------------------------------------
+
+_EARTH_RADIUS_M = 6_371_000.0
+
+
+def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Return distance in meters between two lat/lon points."""
+    lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+    a = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+    return _EARTH_RADIUS_M * 2 * math.asin(math.sqrt(a))
+
+
+def upsert_water_level(station_id: str, station_name: str, timestamp: str,
+                       water_level_cm: float, lat: float, lon: float,
+                       source: str = "rws", reference_datum: str = "NAP"):
+    """Insert or update a water level observation."""
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO water_levels
+               (station_id, station_name, source, reference_datum, timestamp, water_level_cm, lat, lon)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(source, station_id, timestamp) DO UPDATE SET
+                   water_level_cm = excluded.water_level_cm,
+                   station_name = excluded.station_name""",
+            (station_id, station_name, source, reference_datum, timestamp,
+             water_level_cm, lat, lon),
+        )
+
+
+def get_nearest_water_level(timestamp_iso: str, lat: float, lon: float) -> Optional[dict]:
+    """Return the closest water level observation to a given location and time.
+
+    Finds the nearest station by haversine distance, then finds the
+    observation from that station closest in time to timestamp_iso.
+
+    Returns dict with keys: water_level_cm, station_id, station_dist_m,
+    source, reference_datum — or None if no data is available.
+    """
+    from src.config import WATER_STATIONS
+
+    # Find nearest station by distance
+    nearest_station_id = None
+    nearest_dist_m = float("inf")
+    for station_id, meta in WATER_STATIONS.items():
+        d = _haversine_m(lat, lon, meta["lat"], meta["lon"])
+        if d < nearest_dist_m:
+            nearest_dist_m = d
+            nearest_station_id = station_id
+
+    if nearest_station_id is None:
+        return None
+
+    # Find nearest water level reading in time using SQL julianday
+    with get_conn() as conn:
+        row = conn.execute(
+            """SELECT water_level_cm, timestamp, source, reference_datum
+               FROM water_levels
+               WHERE station_id = ?
+               ORDER BY ABS(julianday(timestamp) - julianday(?))
+               LIMIT 1""",
+            (nearest_station_id, timestamp_iso),
+        ).fetchone()
+
+    if row is None:
+        return None
+
+    return {
+        "water_level_cm": row[0],
+        "station_id": nearest_station_id,
+        "station_dist_m": nearest_dist_m,
+        "source": row[2],
+        "reference_datum": row[3],
+    }

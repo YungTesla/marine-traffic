@@ -5,6 +5,7 @@ import sys
 
 from src.ais_client import VesselPosition, VesselStatic, stream_ais
 from src.encounter_detector import EncounterDetector
+from src.water_client import poll_water_levels
 from src import database as db
 from src.config import STATS_INTERVAL_S
 
@@ -51,6 +52,7 @@ async def run():
 
     stats_task = asyncio.create_task(log_stats(detector))
     flush_task = asyncio.create_task(periodic_flush())
+    water_task = asyncio.create_task(poll_water_levels(shutdown_event))
     msg_count = 0
 
     try:
@@ -78,6 +80,7 @@ async def run():
 
         stats_task.cancel()
         flush_task.cancel()
+        water_task.cancel()
 
         s = detector.stats
         logger.info(

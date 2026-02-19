@@ -21,6 +21,7 @@ from src.ml.features import (
     build_bc_state,
 )
 from src.encounter_detector import haversine
+from src import database as db
 
 logger = logging.getLogger(__name__)
 
@@ -138,7 +139,17 @@ def extract_encounters(db_path: Optional[str] = None) -> pd.DataFrame:
             "SELECT * FROM vessels WHERE mmsi = ?", (enc["vessel_b_mmsi"],)
         ).fetchone() or {})
 
-        features = build_encounter_features(enc_dict, pos_a, pos_b, vessel_a, vessel_b)
+        # Waterstand opzoeken op encounter centroid + starttijd
+        water_level = None
+        all_pos = pd.concat([pos_a, pos_b]) if (not pos_a.empty and not pos_b.empty) else pos_a
+        if not all_pos.empty:
+            centroid_lat = all_pos["lat"].mean()
+            centroid_lon = all_pos["lon"].mean()
+            water_level = db.get_nearest_water_level(
+                enc_dict["start_time"], centroid_lat, centroid_lon
+            )
+
+        features = build_encounter_features(enc_dict, pos_a, pos_b, vessel_a, vessel_b, water_level=water_level)
         features["encounter_id"] = enc["id"]
         feature_rows.append(features)
 
