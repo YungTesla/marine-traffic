@@ -69,11 +69,13 @@ CREATE TABLE IF NOT EXISTS water_levels (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     station_id TEXT NOT NULL,
     station_name TEXT,
+    source TEXT NOT NULL DEFAULT 'rws',
+    reference_datum TEXT DEFAULT 'NAP',
     timestamp TEXT NOT NULL,
     water_level_cm REAL,
     lat REAL NOT NULL,
     lon REAL NOT NULL,
-    UNIQUE(station_id, timestamp)
+    UNIQUE(source, station_id, timestamp)
 );
 
 CREATE INDEX IF NOT EXISTS idx_wl_station_ts ON water_levels(station_id, timestamp);
@@ -313,16 +315,19 @@ def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 
 def upsert_water_level(station_id: str, station_name: str, timestamp: str,
-                       water_level_cm: float, lat: float, lon: float):
+                       water_level_cm: float, lat: float, lon: float,
+                       source: str = "rws", reference_datum: str = "NAP"):
     """Insert or update a water level observation."""
     with get_conn() as conn:
         conn.execute(
-            """INSERT INTO water_levels (station_id, station_name, timestamp, water_level_cm, lat, lon)
-               VALUES (?, ?, ?, ?, ?, ?)
-               ON CONFLICT(station_id, timestamp) DO UPDATE SET
+            """INSERT INTO water_levels
+               (station_id, station_name, source, reference_datum, timestamp, water_level_cm, lat, lon)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(source, station_id, timestamp) DO UPDATE SET
                    water_level_cm = excluded.water_level_cm,
                    station_name = excluded.station_name""",
-            (station_id, station_name, timestamp, water_level_cm, lat, lon),
+            (station_id, station_name, source, reference_datum, timestamp,
+             water_level_cm, lat, lon),
         )
 
 
@@ -332,15 +337,15 @@ def get_nearest_water_level(timestamp_iso: str, lat: float, lon: float) -> Optio
     Finds the nearest station by haversine distance, then finds the
     observation from that station closest in time to timestamp_iso.
 
-    Returns dict with keys: water_level_cm, station_id, station_dist_m
-    or None if no data is available.
+    Returns dict with keys: water_level_cm, station_id, station_dist_m,
+    source, reference_datum — or None if no data is available.
     """
-    from src.config import WATERINFO_STATIONS
+    from src.config import WATER_STATIONS
 
     # Find nearest station by distance
     nearest_station_id = None
     nearest_dist_m = float("inf")
-    for station_id, meta in WATERINFO_STATIONS.items():
+    for station_id, meta in WATER_STATIONS.items():
         d = _haversine_m(lat, lon, meta["lat"], meta["lon"])
         if d < nearest_dist_m:
             nearest_dist_m = d
@@ -349,42 +354,24 @@ def get_nearest_water_level(timestamp_iso: str, lat: float, lon: float) -> Optio
     if nearest_station_id is None:
         return None
 
-    # Parse target timestamp
-    try:
-        target_ts = datetime.fromisoformat(timestamp_iso.replace("Z", "+00:00"))
-    except (ValueError, AttributeError):
-        logger.warning("Ongeldige timestamp voor waterstand lookup: %s", timestamp_iso)
-        return None
-
-    # Find nearest water level reading for that station
+    # Find nearest water level reading in time using SQL julianday
     with get_conn() as conn:
-        rows = conn.execute(
-            "SELECT water_level_cm, timestamp FROM water_levels "
-            "WHERE station_id = ? ORDER BY timestamp DESC LIMIT 100",
-            (nearest_station_id,),
-        ).fetchall()
+        row = conn.execute(
+            """SELECT water_level_cm, timestamp, source, reference_datum
+               FROM water_levels
+               WHERE station_id = ?
+               ORDER BY ABS(julianday(timestamp) - julianday(?))
+               LIMIT 1""",
+            (nearest_station_id, timestamp_iso),
+        ).fetchone()
 
-    if not rows:
-        return None
-
-    # Find reading nearest in time
-    best_row = None
-    best_dt = float("inf")
-    for row in rows:
-        try:
-            row_ts = datetime.fromisoformat(row[1].replace("Z", "+00:00"))
-            dt = abs((row_ts - target_ts).total_seconds())
-            if dt < best_dt:
-                best_dt = dt
-                best_row = row
-        except (ValueError, AttributeError):
-            continue
-
-    if best_row is None:
+    if row is None:
         return None
 
     return {
-        "water_level_cm": best_row[0],
+        "water_level_cm": row[0],
         "station_id": nearest_station_id,
         "station_dist_m": nearest_dist_m,
+        "source": row[2],
+        "reference_datum": row[3],
     }
