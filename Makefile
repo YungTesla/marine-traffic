@@ -1,4 +1,4 @@
-.PHONY: help build up down logs restart status shell db-backup db-stats clean
+.PHONY: help build up down logs restart status shell db-backup db-stats clean collect
 
 help: ## Toon beschikbare commando's
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -37,6 +37,9 @@ db-stats: ## Toon database statistieken
 		print('Positions:', c.execute('SELECT COUNT(*) FROM positions').fetchone()[0]); \
 		print('Encounters:', c.execute('SELECT COUNT(*) FROM encounters').fetchone()[0]); \
 		print('Encounter positions:', c.execute('SELECT COUNT(*) FROM encounter_positions').fetchone()[0])"
+
+collect: ## Verzamel AIS data voor N uren en exporteer CSV (make collect HOURS=6)
+	./collect.sh $(HOURS)
 
 clean: ## Verwijder containers, images en volumes (DATA GAAT VERLOREN!)
 	@echo "WAARSCHUWING: Dit verwijdert alle data inclusief de database!"

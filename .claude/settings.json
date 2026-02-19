@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(# Check existing ddapi20 code for reference grep -r \"\"ddapi\"\" /Users/woutersluiter/Documents/Development/products/marine-traffic/src/)"
+    ]
+  }
+}

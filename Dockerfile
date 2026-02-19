@@ -11,6 +11,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Applicatie code
 COPY src/ src/
+COPY scripts/ scripts/
 
 # Health check: test of AISStream.io bereikbaar is
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
